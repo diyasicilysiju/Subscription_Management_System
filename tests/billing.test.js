@@ -87,6 +87,7 @@ async function cleanup() {
   const quotes = await prisma.quotationItem.findMany({ where: { planId: { in: planIds } }, select: { quotationId: true } });
   await prisma.quotation.deleteMany({ where: { id: { in: quotes.map((q) => q.quotationId) } } });
   await prisma.subscription.deleteMany({ where: { id: { in: subIds } } });
+  await prisma.quotationTemplate.deleteMany({ where: { code: { startsWith: 'TESTBILL' } } }); // items cascade; quotations keep a null templateId
   await prisma.discount.deleteMany({ where: { id: { in: discountIds } } });
   await prisma.plan.deleteMany({ where: { id: { in: planIds } } });
   await prisma.tax.deleteMany({ where: { code: { startsWith: 'TESTTAX' } } });
@@ -605,6 +606,144 @@ async function runTests() {
     const pay = await api('POST', '/payments', tokens.staff, { invoiceId: issued.id, amount: 1, paymentMethod: 'CASH' });
     assert.equal(pay.status, 201, JSON.stringify(pay.body));
     assert.equal((await prisma.invoice.findUnique({ where: { id: issued.id } })).status, 'OVERDUE');
+  });
+
+  // ---- schema additions: templates, default tax, payment terms, plan switches ----
+  console.log('\nQuotation templates, default tax, payment terms, plan switches');
+  await test('Quotation templates: Admin manages, Staff reads, quotes start from them', async () => {
+    const body = { name: 'Starter bundle', code: `testbill-tpl-${RUN}`, planId: ctx.plan.id, validityDays: 7, notes: 'tpl notes', terms: 'tpl terms', items: [{ variantId: ctx.variant.id, quantity: 3, unitPrice: 20 }] };
+    assert.equal((await api('POST', '/quotation-templates', tokens.staff, body)).status, 403);
+    const tooFew = await api('POST', '/quotation-templates', tokens.admin, { ...body, items: [{ variantId: ctx.variant.id, quantity: 1 }] });
+    assert.equal(tooFew.status, 400);
+    assert.equal(tooFew.body.code, 'PLAN_MIN_QUANTITY_NOT_MET', 'a template that can never satisfy Plan.minQuantity is refused');
+    const created = await api('POST', '/quotation-templates', tokens.admin, body);
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    ctx.template = created.data.template;
+    assert.equal(ctx.template.code, `TESTBILL-TPL-${RUN}`);
+    assert.equal(ctx.template.items.length, 1);
+    assert.equal((await api('POST', '/quotation-templates', tokens.admin, body)).status, 409);
+    assert.ok((await api('GET', '/quotation-templates', tokens.staff)).data.templates.some((t) => t.id === ctx.template.id));
+    assert.equal((await api('GET', '/quotation-templates', tokens.acme)).status, 403);
+
+    const quote = await api('POST', '/quotations', tokens.staff, { templateId: ctx.template.id, customerId: ctx.acme.id });
+    assert.equal(quote.status, 201, JSON.stringify(quote.body));
+    const q = quote.data.quotation;
+    assert.equal(q.templateId, ctx.template.id);
+    assert.equal(q.items.length, 1);
+    assert.equal(q.items[0].quantity, 3);
+    assert.equal(q.items[0].unitPrice, 20);
+    assert.equal(q.items[0].planId, ctx.plan.id);
+    assert.equal(q.subtotal, 60);
+    assert.equal(q.notes, 'tpl notes');
+    assert.equal(q.terms, 'tpl terms');
+    const days = (new Date(q.validUntil) - Date.now()) / 86400000;
+    assert.ok(days > 6 && days <= 7.01, `valid for the template's 7 days, got ${days}`);
+
+    const override = await api('POST', '/quotations', tokens.staff, { templateId: ctx.template.id, customerId: ctx.acme.id, validDays: 3, items: [{ variantId: ctx.variant.id, quantity: 4 }] });
+    assert.equal(override.status, 201);
+    assert.equal(override.data.quotation.items[0].quantity, 4);
+    assert.equal(override.data.quotation.items[0].unitPrice, ctx.variant.price.toNumber(), 'explicit lines replace the template lines');
+    assert.equal((await api('POST', '/quotations', tokens.staff, { customerId: ctx.acme.id })).status, 400, 'lines or a template are required');
+
+    const updated = await api('PUT', `/quotation-templates/${ctx.template.id}`, tokens.admin, { validityDays: 10 });
+    assert.equal(updated.status, 200);
+    assert.equal(updated.data.template.validityDays, 10);
+    assert.equal(updated.data.template.items.length, 1, 'lines are kept when only other fields change');
+    assert.equal((await api('DELETE', `/quotation-templates/${ctx.template.id}`, tokens.admin)).status, 200);
+    const inactive = await api('POST', '/quotations', tokens.staff, { templateId: ctx.template.id, customerId: ctx.acme.id });
+    assert.equal(inactive.status, 400, 'an inactive template cannot start a quotation');
+  });
+  await test('Default tax: only one at a time, cannot be deactivated, picked up by new quotes', async () => {
+    const mkTax = (suffix, rate) => api('POST', '/taxes', tokens.admin, { name: `Default ${suffix}`, code: `TESTTAX-D${suffix}-${RUN}`, rate, isDefault: true });
+    const first = await mkTax('1', 5.5);
+    assert.equal(first.status, 201, JSON.stringify(first.body));
+    assert.equal(first.data.tax.isDefault, true);
+    const q1 = await api('POST', '/quotations', tokens.staff, quoteBody(3));
+    assert.equal(q1.data.quotation.items[0].taxRate, 5.5, 'the flagged default tax is used');
+
+    const second = await mkTax('2', 3);
+    assert.equal(second.status, 201);
+    assert.equal(await prisma.tax.count({ where: { isDefault: true } }), 1, 'promoting a tax demotes the previous default');
+    assert.equal((await prisma.tax.findUnique({ where: { id: first.data.tax.id } })).isDefault, false);
+    assert.equal((await api('PUT', `/taxes/${second.data.tax.id}`, tokens.admin, { isActive: false })).status, 400, 'the default tax cannot be deactivated');
+
+    assert.equal((await api('PUT', `/taxes/${second.data.tax.id}`, tokens.admin, { isDefault: false })).status, 200);
+    const q2 = await api('POST', '/quotations', tokens.staff, quoteBody(3));
+    assert.equal(q2.data.quotation.items[0].taxRate, 8.25, 'with no flagged tax the DEFAULT_TAX_CODE fallback applies');
+  });
+  await test('Quoted tax rate is carried through conversion and billed; 0 means exempt, omitted means default', async () => {
+    const quote = (await api('POST', '/quotations', tokens.staff, quoteBody(3, { items: [{ variantId: ctx.variant.id, quantity: 3, unitPrice: 33.33, taxRate: 5 }] }))).data.quotation;
+    const conv = await api('POST', `/quotations/${quote.id}/convert`, tokens.staff, { startDate: daysAgo(1).toISOString() });
+    assert.equal(conv.status, 201, JSON.stringify(conv.body));
+    assert.equal(conv.data.subscription.items[0].taxRate, 5);
+    const run = await api('POST', '/billing/run', tokens.admin, { subscriptionId: conv.data.subscription.id });
+    assert.equal(run.data.summary.invoicesGenerated, 1);
+    const inv = await prisma.invoice.findFirst({ where: { subscriptionId: conv.data.subscription.id }, include: { items: true } });
+    assert.equal(inv.items[0].taxRate.toNumber(), 5, 'billing charges the quoted rate, not the current default');
+
+    const exempt = (await api('POST', '/subscriptions', tokens.staff, subBody({ startDate: daysAgo(1).toISOString(), items: [{ variantId: ctx.variant.id, quantity: 3, unitPrice: 33.33, taxRate: 0 }] }))).data.subscription;
+    assert.equal(exempt.items[0].taxRate, 0);
+    await api('POST', '/billing/run', tokens.admin, { subscriptionId: exempt.id });
+    const exInv = await prisma.invoice.findFirst({ where: { subscriptionId: exempt.id }, include: { items: true } });
+    assert.equal(exInv.items[0].taxRate.toNumber(), 0);
+    assert.equal(exInv.taxAmount.toNumber(), 0);
+  });
+  await test('Payment terms set the invoice due date (default 30 days)', async () => {
+    const make = async (extra) => (await api('POST', '/subscriptions', tokens.staff, subBody({ startDate: daysAgo(1).toISOString(), ...extra }))).data.subscription;
+    const custom = await make({ paymentTermsDays: 10 });
+    const normal = await make({});
+    assert.equal(custom.paymentTermsDays, 10);
+    assert.equal(normal.paymentTermsDays, 30);
+    assert.equal((await api('POST', '/subscriptions', tokens.staff, subBody({ paymentTermsDays: -1 }))).status, 400);
+    for (const sub of [custom, normal]) await api('POST', '/billing/run', tokens.admin, { subscriptionId: sub.id });
+    const dueIn = async (id) => {
+      const inv = await prisma.invoice.findFirst({ where: { subscriptionId: id } });
+      return Math.round((inv.dueDate - inv.issueDate) / 86400000);
+    };
+    assert.equal(await dueIn(custom.id), 10);
+    assert.equal(await dueIn(normal.id), 30);
+  });
+  await test('Per-plan switches: pause / early close / renew can be disabled by the Admin', async () => {
+    const plan3 = await mkPlan(`TESTBILL3-${RUN}`, { minQuantity: 1 });
+    const body = (extra = {}) => subBody({ planId: plan3.id, items: [{ variantId: ctx.variant.id, quantity: 1 }], ...extra });
+    const lifecycle = (flags, token = tokens.admin) => api('PATCH', `/plans/${plan3.id}/lifecycle`, token, flags);
+    assert.equal(plan3.allowPause, true, 'new plans allow everything by default');
+    assert.equal((await lifecycle({ allowPause: false }, tokens.staff)).status, 403);
+    assert.equal((await lifecycle({})).status, 400);
+    assert.equal((await api('PATCH', '/plans/00000000-0000-4000-8000-000000000000/lifecycle', tokens.admin, { allowPause: false })).status, 404);
+
+    const sub = (await api('POST', '/subscriptions', tokens.staff, body())).data.subscription;
+    assert.equal((await lifecycle({ allowPause: false })).status, 200);
+    const pause = await api('POST', `/subscriptions/${sub.id}/pause`, tokens.staff);
+    assert.equal(pause.status, 409);
+    assert.equal(pause.body.code, 'PLAN_DOES_NOT_ALLOW_PAUSE');
+    assert.equal((await api('POST', `/subscriptions/${sub.id}/pause`, tokens.acme)).status, 409, 'the customer cannot bypass it either');
+    await lifecycle({ allowPause: true });
+    assert.equal((await api('POST', `/subscriptions/${sub.id}/pause`, tokens.staff)).status, 200);
+    await api('POST', `/subscriptions/${sub.id}/resume`, tokens.staff);
+
+    await lifecycle({ allowEarlyClose: false });
+    const cancel = await api('POST', `/subscriptions/${sub.id}/cancel`, tokens.staff, {});
+    assert.equal(cancel.status, 409);
+    assert.equal(cancel.body.code, 'PLAN_DOES_NOT_ALLOW_CANCEL');
+    await lifecycle({ allowEarlyClose: true });
+
+    await lifecycle({ allowRenew: false });
+    const withEnd = (await api('POST', '/subscriptions', tokens.staff, body({ endDate: new Date(Date.now() + 40 * 86400000).toISOString() }))).data.subscription;
+    const renew = await api('POST', `/subscriptions/${withEnd.id}/renew`, tokens.staff);
+    assert.equal(renew.status, 409);
+    assert.equal(renew.body.code, 'PLAN_DOES_NOT_ALLOW_RENEW');
+    await lifecycle({ allowRenew: true });
+    assert.equal((await api('POST', `/subscriptions/${withEnd.id}/renew`, tokens.staff)).status, 200);
+
+    // autoCloseOnEnd = false: the subscription is not expired and keeps billing past its end date
+    await lifecycle({ autoCloseOnEnd: false });
+    const open = (await api('POST', '/subscriptions', tokens.staff, body({ startDate: daysAgo(40).toISOString(), endDate: daysAgo(20).toISOString() }))).data.subscription;
+    const run = await api('POST', '/billing/run', tokens.admin, { subscriptionId: open.id });
+    assert.equal(run.data.summary.subscriptionsExpired, 0);
+    assert.equal((await prisma.subscription.findUnique({ where: { id: open.id } })).status, 'ACTIVE');
+    assert.equal(await prisma.invoice.count({ where: { subscriptionId: open.id } }), 2, 'billed for the period that starts after the end date');
+    await lifecycle({ autoCloseOnEnd: true });
   });
 
   // ---- reports ----------------------------------------------------------
