@@ -1,4 +1,5 @@
 import apiClient from './client';
+import { isOfflineOrUnimplemented } from '../utils/apiHelpers';
 
 let mockTaxes = [
   {
@@ -34,7 +35,7 @@ export const getTaxes = async (params = {}) => {
   try {
     return await apiClient.get('/taxes', { params });
   } catch (error) {
-    if (error.status === 404 || error.status === 501) {
+    if (isOfflineOrUnimplemented(error)) {
       return { success: true, data: { taxes: mockTaxes, total: mockTaxes.length } };
     }
     throw error;
@@ -45,7 +46,7 @@ export const createTax = async (taxData) => {
   try {
     return await apiClient.post('/taxes', taxData);
   } catch (error) {
-    if (error.status === 404 || error.status === 501) {
+    if (isOfflineOrUnimplemented(error)) {
       const newTax = {
         id: `tax-${Date.now()}`,
         isActive: true,

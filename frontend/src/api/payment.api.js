@@ -1,4 +1,5 @@
 import apiClient from './client';
+import { isOfflineOrUnimplemented } from '../utils/apiHelpers';
 
 let mockPayments = [
   {
@@ -35,7 +36,7 @@ export const getPayments = async (params = {}) => {
   try {
     return await apiClient.get('/payments', { params });
   } catch (error) {
-    if (error.status === 404 || error.status === 501) {
+    if (isOfflineOrUnimplemented(error)) {
       let filtered = [...mockPayments];
       if (params.customerId) {
         filtered = filtered.filter((p) => p.customerId === params.customerId);
@@ -59,7 +60,7 @@ export const recordPayment = async (paymentData) => {
   try {
     return await apiClient.post('/payments', paymentData);
   } catch (error) {
-    if (error.status === 404 || error.status === 501) {
+    if (isOfflineOrUnimplemented(error)) {
       const newPay = {
         id: `pay-${Date.now()}`,
         paymentNumber: `PAY-2026-${String(mockPayments.length + 1).padStart(4, '0')}`,

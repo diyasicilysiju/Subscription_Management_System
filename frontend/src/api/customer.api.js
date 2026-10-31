@@ -1,4 +1,5 @@
 import apiClient from './client';
+import { isOfflineOrUnimplemented } from '../utils/apiHelpers';
 
 let mockCustomers = [
   {
@@ -46,7 +47,7 @@ export const getCustomers = async (params = {}) => {
   try {
     return await apiClient.get('/customers', { params });
   } catch (error) {
-    if (error.status === 404 || error.status === 501 || error.message === 'Network Error' || error.code === 'ERR_NETWORK') {
+    if (isOfflineOrUnimplemented(error)) {
       let filtered = [...mockCustomers];
       if (params.status) {
         filtered = filtered.filter((c) => c.status === params.status);
@@ -76,7 +77,7 @@ export const getCustomer = async (id) => {
   try {
     return await apiClient.get(`/customers/${id}`);
   } catch (error) {
-    if (error.status === 404 || error.status === 501 || error.message === 'Network Error' || error.code === 'ERR_NETWORK') {
+    if (isOfflineOrUnimplemented(error)) {
       const found = mockCustomers.find((c) => c.id === id);
       if (found) return { success: true, data: found };
     }
@@ -88,7 +89,7 @@ export const createCustomer = async (customerData) => {
   try {
     return await apiClient.post('/customers', customerData);
   } catch (error) {
-    if (error.status === 404 || error.status === 501 || error.message === 'Network Error' || error.code === 'ERR_NETWORK') {
+    if (isOfflineOrUnimplemented(error)) {
       const newCust = {
         id: `c-${Date.now()}`,
         status: 'ACTIVE',
@@ -107,7 +108,7 @@ export const updateCustomer = async (id, customerData) => {
   try {
     return await apiClient.put(`/customers/${id}`, customerData);
   } catch (error) {
-    if (error.status === 404 || error.status === 501 || error.message === 'Network Error' || error.code === 'ERR_NETWORK') {
+    if (isOfflineOrUnimplemented(error)) {
       const idx = mockCustomers.findIndex((c) => c.id === id);
       if (idx !== -1) {
         mockCustomers[idx] = { ...mockCustomers[idx], ...customerData };
@@ -122,7 +123,7 @@ export const deleteCustomer = async (id) => {
   try {
     return await apiClient.delete(`/customers/${id}`);
   } catch (error) {
-    if (error.status === 404 || error.status === 501 || error.message === 'Network Error' || error.code === 'ERR_NETWORK') {
+    if (isOfflineOrUnimplemented(error)) {
       const cust = mockCustomers.find((c) => c.id === id);
       if (cust) cust.status = 'INACTIVE';
       return { success: true, message: 'Customer deactivated successfully' };

@@ -1,4 +1,5 @@
 import apiClient from './client';
+import { isOfflineOrUnimplemented } from '../utils/apiHelpers';
 
 let mockDiscounts = [
   {
@@ -33,7 +34,7 @@ export const getDiscounts = async (params = {}) => {
   try {
     return await apiClient.get('/discounts', { params });
   } catch (error) {
-    if (error.status === 404 || error.status === 501) {
+    if (isOfflineOrUnimplemented(error)) {
       return { success: true, data: { discounts: mockDiscounts, total: mockDiscounts.length } };
     }
     throw error;
@@ -44,7 +45,7 @@ export const createDiscount = async (discountData) => {
   try {
     return await apiClient.post('/discounts', discountData);
   } catch (error) {
-    if (error.status === 404 || error.status === 501) {
+    if (isOfflineOrUnimplemented(error)) {
       const newDisc = {
         id: `disc-${Date.now()}`,
         timesRedeemed: 0,

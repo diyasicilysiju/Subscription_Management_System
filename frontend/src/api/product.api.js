@@ -1,4 +1,5 @@
 import apiClient from './client';
+import { isOfflineOrUnimplemented } from '../utils/apiHelpers';
 
 let mockProducts = [
   {
@@ -34,7 +35,7 @@ export const getProducts = async (params = {}) => {
   try {
     return await apiClient.get('/products', { params });
   } catch (error) {
-    if (error.status === 404 || error.status === 501 || error.message === 'Network Error' || error.code === 'ERR_NETWORK') {
+    if (isOfflineOrUnimplemented(error)) {
       let filtered = [...mockProducts];
       if (params.search) {
         const s = params.search.toLowerCase();
@@ -61,7 +62,7 @@ export const getProduct = async (id) => {
   try {
     return await apiClient.get(`/products/${id}`);
   } catch (error) {
-    if (error.status === 404 || error.status === 501 || error.message === 'Network Error' || error.code === 'ERR_NETWORK') {
+    if (isOfflineOrUnimplemented(error)) {
       const found = mockProducts.find((p) => p.id === id);
       if (found) return { success: true, data: found };
     }
@@ -73,7 +74,7 @@ export const createProduct = async (productData) => {
   try {
     return await apiClient.post('/products', productData);
   } catch (error) {
-    if (error.status === 404 || error.status === 501 || error.message === 'Network Error' || error.code === 'ERR_NETWORK') {
+    if (isOfflineOrUnimplemented(error)) {
       const newProd = {
         id: `prod-${Date.now()}`,
         variants: [],
@@ -91,7 +92,7 @@ export const updateProduct = async (id, productData) => {
   try {
     return await apiClient.put(`/products/${id}`, productData);
   } catch (error) {
-    if (error.status === 404 || error.status === 501 || error.message === 'Network Error' || error.code === 'ERR_NETWORK') {
+    if (isOfflineOrUnimplemented(error)) {
       const idx = mockProducts.findIndex((p) => p.id === id);
       if (idx !== -1) {
         mockProducts[idx] = { ...mockProducts[idx], ...productData };
@@ -106,7 +107,7 @@ export const deleteProduct = async (id) => {
   try {
     return await apiClient.delete(`/products/${id}`);
   } catch (error) {
-    if (error.status === 404 || error.status === 501 || error.message === 'Network Error' || error.code === 'ERR_NETWORK') {
+    if (isOfflineOrUnimplemented(error)) {
       mockProducts = mockProducts.filter((p) => p.id !== id);
       return { success: true, message: 'Product deleted' };
     }
@@ -118,7 +119,7 @@ export const addProductVariant = async (productId, variantData) => {
   try {
     return await apiClient.post(`/products/${productId}/variants`, variantData);
   } catch (error) {
-    if (error.status === 404 || error.status === 501 || error.message === 'Network Error' || error.code === 'ERR_NETWORK') {
+    if (isOfflineOrUnimplemented(error)) {
       const prod = mockProducts.find((p) => p.id === productId);
       if (prod) {
         const newVar = { id: `v-${Date.now()}`, ...variantData };

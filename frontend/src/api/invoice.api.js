@@ -1,4 +1,5 @@
 import apiClient from './client';
+import { isOfflineOrUnimplemented } from '../utils/apiHelpers';
 
 let mockInvoices = [
   {
@@ -67,7 +68,7 @@ export const getInvoices = async (params = {}) => {
   try {
     return await apiClient.get('/invoices', { params });
   } catch (error) {
-    if (error.status === 404 || error.status === 501) {
+    if (isOfflineOrUnimplemented(error)) {
       let filtered = [...mockInvoices];
       if (params.status) {
         filtered = filtered.filter((inv) => inv.status === params.status);
@@ -94,7 +95,7 @@ export const getInvoice = async (id) => {
   try {
     return await apiClient.get(`/invoices/${id}`);
   } catch (error) {
-    if (error.status === 404 || error.status === 501) {
+    if (isOfflineOrUnimplemented(error)) {
       const found = mockInvoices.find((inv) => inv.id === id);
       if (found) return { success: true, data: found };
     }
@@ -106,7 +107,7 @@ export const confirmInvoice = async (id) => {
   try {
     return await apiClient.post(`/invoices/${id}/confirm`);
   } catch (error) {
-    if (error.status === 404 || error.status === 501) {
+    if (isOfflineOrUnimplemented(error)) {
       const inv = mockInvoices.find((i) => i.id === id);
       if (inv) inv.status = 'ISSUED';
       return { success: true, message: 'Invoice confirmed and issued to customer' };
@@ -119,7 +120,7 @@ export const cancelInvoice = async (id) => {
   try {
     return await apiClient.post(`/invoices/${id}/cancel`);
   } catch (error) {
-    if (error.status === 404 || error.status === 501) {
+    if (isOfflineOrUnimplemented(error)) {
       const inv = mockInvoices.find((i) => i.id === id);
       if (inv) inv.status = 'CANCELLED';
       return { success: true, message: 'Invoice cancelled' };

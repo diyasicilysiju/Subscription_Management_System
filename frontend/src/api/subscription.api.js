@@ -1,4 +1,5 @@
 import apiClient from './client';
+import { isOfflineOrUnimplemented } from '../utils/apiHelpers';
 
 let mockSubscriptions = [
   {
@@ -55,7 +56,7 @@ export const getSubscriptions = async (params = {}) => {
   try {
     return await apiClient.get('/subscriptions', { params });
   } catch (error) {
-    if (error.status === 404 || error.status === 501) {
+    if (isOfflineOrUnimplemented(error)) {
       let filtered = [...mockSubscriptions];
       if (params.status) {
         filtered = filtered.filter((s) => s.status === params.status);
@@ -83,7 +84,7 @@ export const getSubscription = async (id) => {
   try {
     return await apiClient.get(`/subscriptions/${id}`);
   } catch (error) {
-    if (error.status === 404 || error.status === 501) {
+    if (isOfflineOrUnimplemented(error)) {
       const found = mockSubscriptions.find((s) => s.id === id);
       if (found) return { success: true, data: found };
     }
@@ -95,7 +96,7 @@ export const createSubscription = async (subData) => {
   try {
     return await apiClient.post('/subscriptions', subData);
   } catch (error) {
-    if (error.status === 404 || error.status === 501) {
+    if (isOfflineOrUnimplemented(error)) {
       const newSub = {
         id: `sub-${Date.now()}`,
         subscriptionNumber: `SUB-2026-${String(mockSubscriptions.length + 1).padStart(4, '0')}`,
@@ -117,7 +118,7 @@ export const pauseSubscription = async (id) => {
   try {
     return await apiClient.post(`/subscriptions/${id}/pause`);
   } catch (error) {
-    if (error.status === 404 || error.status === 501) {
+    if (isOfflineOrUnimplemented(error)) {
       const sub = mockSubscriptions.find((s) => s.id === id);
       if (sub) sub.status = 'PAUSED';
       return { success: true, message: 'Subscription has been paused' };
@@ -130,7 +131,7 @@ export const resumeSubscription = async (id) => {
   try {
     return await apiClient.post(`/subscriptions/${id}/resume`);
   } catch (error) {
-    if (error.status === 404 || error.status === 501) {
+    if (isOfflineOrUnimplemented(error)) {
       const sub = mockSubscriptions.find((s) => s.id === id);
       if (sub) sub.status = 'ACTIVE';
       return { success: true, message: 'Subscription has been resumed to active status' };
@@ -143,7 +144,7 @@ export const cancelSubscription = async (id) => {
   try {
     return await apiClient.post(`/subscriptions/${id}/cancel`);
   } catch (error) {
-    if (error.status === 404 || error.status === 501) {
+    if (isOfflineOrUnimplemented(error)) {
       const sub = mockSubscriptions.find((s) => s.id === id);
       if (sub) sub.status = 'CANCELLED';
       return { success: true, message: 'Subscription cancelled successfully' };
@@ -156,7 +157,7 @@ export const renewSubscription = async (id) => {
   try {
     return await apiClient.post(`/subscriptions/${id}/renew`);
   } catch (error) {
-    if (error.status === 404 || error.status === 501) {
+    if (isOfflineOrUnimplemented(error)) {
       const sub = mockSubscriptions.find((s) => s.id === id);
       if (sub) {
         sub.status = 'ACTIVE';

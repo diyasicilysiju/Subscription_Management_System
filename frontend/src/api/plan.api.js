@@ -1,4 +1,5 @@
 import apiClient from './client';
+import { isOfflineOrUnimplemented } from '../utils/apiHelpers';
 
 let mockPlans = [
   {
@@ -72,7 +73,7 @@ export const getPlans = async (params = {}) => {
   try {
     return await apiClient.get('/plans', { params });
   } catch (error) {
-    if (error.status === 404 || error.status === 501 || error.message === 'Network Error' || error.code === 'ERR_NETWORK') {
+    if (isOfflineOrUnimplemented(error)) {
       let filtered = [...mockPlans];
       if (params.billingInterval) {
         filtered = filtered.filter((p) => p.billingInterval === params.billingInterval);
@@ -95,7 +96,7 @@ export const getPlan = async (id) => {
   try {
     return await apiClient.get(`/plans/${id}`);
   } catch (error) {
-    if (error.status === 404 || error.status === 501 || error.message === 'Network Error' || error.code === 'ERR_NETWORK') {
+    if (isOfflineOrUnimplemented(error)) {
       const found = mockPlans.find((p) => p.id === id);
       if (found) return { success: true, data: found };
     }
@@ -107,7 +108,7 @@ export const createPlan = async (planData) => {
   try {
     return await apiClient.post('/plans', planData);
   } catch (error) {
-    if (error.status === 404 || error.status === 501 || error.message === 'Network Error' || error.code === 'ERR_NETWORK') {
+    if (isOfflineOrUnimplemented(error)) {
       const newPlan = {
         id: `p-${Date.now()}`,
         isActive: true,
@@ -125,7 +126,7 @@ export const updatePlan = async (id, planData) => {
   try {
     return await apiClient.put(`/plans/${id}`, planData);
   } catch (error) {
-    if (error.status === 404 || error.status === 501 || error.message === 'Network Error' || error.code === 'ERR_NETWORK') {
+    if (isOfflineOrUnimplemented(error)) {
       const idx = mockPlans.findIndex((p) => p.id === id);
       if (idx !== -1) {
         mockPlans[idx] = { ...mockPlans[idx], ...planData };
@@ -140,7 +141,7 @@ export const deletePlan = async (id) => {
   try {
     return await apiClient.delete(`/plans/${id}`);
   } catch (error) {
-    if (error.status === 404 || error.status === 501 || error.message === 'Network Error' || error.code === 'ERR_NETWORK') {
+    if (isOfflineOrUnimplemented(error)) {
       mockPlans = mockPlans.filter((p) => p.id !== id);
       return { success: true, message: 'Plan deleted' };
     }
@@ -152,7 +153,7 @@ export const validateQuantity = async (planId, quantity) => {
   try {
     return await apiClient.post(`/plans/${planId}/validate-quantity`, { quantity });
   } catch (error) {
-    if (error.status === 404 || error.status === 501 || error.message === 'Network Error' || error.code === 'ERR_NETWORK') {
+    if (isOfflineOrUnimplemented(error)) {
       const plan = mockPlans.find((p) => p.id === planId);
       const minQty = plan ? plan.minQuantity : 1;
       if (quantity < minQty) {

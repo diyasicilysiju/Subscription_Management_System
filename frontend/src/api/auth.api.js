@@ -1,11 +1,11 @@
 import apiClient from './client';
+import { isOfflineOrUnimplemented } from '../utils/apiHelpers';
 
 export const login = async (credentials) => {
   try {
     return await apiClient.post('/auth/login', credentials);
   } catch (error) {
-    // If backend server is not running on port 5000, provide offline preview login
-    if (error.message === 'Network Error' || error.code === 'ERR_NETWORK') {
+    if (isOfflineOrUnimplemented(error)) {
       const email = credentials.email?.toLowerCase();
       if (email === 'admin@brightloop.io') {
         return {
@@ -38,7 +38,6 @@ export const login = async (credentials) => {
           },
         };
       } else {
-        // Customer login (john.doe@acme.com or any registered email)
         return {
           success: true,
           message: 'Signed in to Customer Portal (Offline Preview)',
@@ -70,7 +69,7 @@ export const register = async (userData) => {
   try {
     return await apiClient.post('/auth/register', userData);
   } catch (error) {
-    if (error.message === 'Network Error' || error.code === 'ERR_NETWORK') {
+    if (isOfflineOrUnimplemented(error)) {
       const fName = userData.firstName || userData.name?.split(' ')[0] || 'Customer';
       const lName = userData.lastName || '';
       return {
@@ -104,7 +103,7 @@ export const getMe = async () => {
   try {
     return await apiClient.get('/auth/me');
   } catch (error) {
-    if (error.message === 'Network Error' || error.code === 'ERR_NETWORK') {
+    if (isOfflineOrUnimplemented(error)) {
       const stored = localStorage.getItem('user');
       if (stored) {
         return { success: true, data: { user: JSON.parse(stored) } };
@@ -118,7 +117,7 @@ export const createStaff = async (staffData) => {
   try {
     return await apiClient.post('/auth/staff', staffData);
   } catch (error) {
-    if (error.message === 'Network Error' || error.code === 'ERR_NETWORK') {
+    if (isOfflineOrUnimplemented(error)) {
       return {
         success: true,
         message: 'Staff member provisioned (Offline Preview)',
