@@ -51,7 +51,8 @@ export const Plans = () => {
         billingInterval: intervalFilter || undefined,
       });
       if (res?.data) {
-        setPlans(res.data);
+        // The live API wraps the list as { plans: [...] }; the offline mock returns a bare array.
+        setPlans(Array.isArray(res.data) ? res.data : res.data.plans || []);
       }
     } catch (err) {
       setError(err.message || 'Failed to fetch subscription plans.');
