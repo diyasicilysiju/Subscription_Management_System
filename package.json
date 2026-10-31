@@ -8,6 +8,7 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "test": "node tests/foundation.test.js",
+    "test:billing": "node tests/billing.test.js",
     "test:health": "node -e \"fetch('http://localhost:5000/api/v1/health').then(r=>r.json()).then(console.log).catch(console.error)\"",
     "prisma:generate": "npx prisma generate",
     "prisma:migrate": "npx prisma migrate dev",
