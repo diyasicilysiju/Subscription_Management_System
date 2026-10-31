@@ -3,11 +3,12 @@ import { sendSuccess } from '../utils/apiResponse.js';
 
 export const getCustomers = async (req, res, next) => {
   try {
-    const customers = await customerService.getAllCustomers();
+    const { customers, meta } = await customerService.getAllCustomers(req.query);
     return sendSuccess(res, {
       statusCode: 200,
       message: 'Customers retrieved successfully',
       data: { customers },
+      meta,
     });
   } catch (error) {
     return next(error);
@@ -46,6 +47,19 @@ export const updateCustomer = async (req, res, next) => {
     return sendSuccess(res, {
       statusCode: 200,
       message: 'Customer updated successfully',
+      data: { customer },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const deleteCustomer = async (req, res, next) => {
+  try {
+    const customer = await customerService.deleteCustomer(req.params.id);
+    return sendSuccess(res, {
+      statusCode: 200,
+      message: 'Customer deactivated successfully',
       data: { customer },
     });
   } catch (error) {
