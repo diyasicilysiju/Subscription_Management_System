@@ -4,7 +4,7 @@ import { sum } from '../utils/money.js';
 import { addDays, addInterval, fmtDate } from '../utils/dates.js';
 import { buildMeta, parsePagination } from '../utils/pagination.js';
 import { nextNumber, withNumberRetry } from '../utils/numbering.js';
-import { computeLine, computeTotals } from './pricing.service.js';
+import { computeLine, computeTotals, DEFAULT_PAYMENT_TERMS_DAYS } from './pricing.service.js';
 import { getDefaultTaxRate } from './tax.service.js';
 import { rankApplicableDiscounts, recordDiscountApplication, reserveDiscountUse } from './discount.service.js';
 import { markOverdueInvoices } from './invoice.service.js';
@@ -29,7 +29,6 @@ import { expireDueSubscriptions } from './subscription.service.js';
  *    billed only once the trial has ended.
  */
 
-const DEFAULT_PAYMENT_TERMS_DAYS = parseInt(process.env.DEFAULT_PAYMENT_TERMS_DAYS, 10) || 30;
 const MAX_PERIODS_PER_SUBSCRIPTION = 400; // safety valve for e.g. a DAILY plan neglected for over a year
 const BATCH_SIZE = 200;
 
@@ -46,6 +45,7 @@ const buildBillableLines = (subscription, periodStart, periodEnd) => {
       planId: plan.id,
       quantity: item.quantity,
       unitPrice: item.unitPrice,
+      taxRate: item.taxRate, // null = default tax
       description: lineDescription(`${item.variant.product.name} - ${item.variant.name} [${plan.name}]`, periodStart, periodEnd),
     }));
   }
@@ -56,6 +56,7 @@ const buildBillableLines = (subscription, periodStart, periodEnd) => {
     planId: plan.id,
     quantity: 1,
     unitPrice: plan.price,
+    taxRate: null,
     description: lineDescription(plan.name, periodStart, periodEnd),
   }];
 };
@@ -84,13 +85,13 @@ const createInvoiceForPeriod = async (tx, { subscription, periodStart, periodEnd
 
   const priced = lines.map((l) => ({
     ...l,
-    ...computeLine({ unitPrice: l.unitPrice, quantity: l.quantity, discountAmount: chosen?.result.perLine.get(l.key) ?? 0, taxRate }),
+    ...computeLine({ unitPrice: l.unitPrice, quantity: l.quantity, discountAmount: chosen?.result.perLine.get(l.key) ?? 0, taxRate: l.taxRate ?? taxRate }),
   }));
   const totals = computeTotals(priced);
   const paidUpFront = totals.totalAmount.lessThanOrEqualTo(0);
 
   const invoiceNumber = await nextNumber(tx, 'invoice', 'invoiceNumber', 'INV');
-  const termsDays = subscription.paymentTermsDays ?? DEFAULT_PAYMENT_TERMS_DAYS; // Subscription.paymentTermsDays once Member 3 adds it
+  const termsDays = subscription.paymentTermsDays ?? DEFAULT_PAYMENT_TERMS_DAYS;
   const invoice = await tx.invoice.create({
     data: {
       invoiceNumber,
@@ -161,7 +162,8 @@ export const billSubscription = async (subscriptionId, { targetDate, billingRunI
       let periods = 0;
 
       while (periodStart <= targetDate && periods < MAX_PERIODS_PER_SUBSCRIPTION) {
-        if (subscription.endDate && periodStart >= subscription.endDate) break;
+        // Plans that do not auto-close keep billing past their end date until someone closes them.
+        if (plan.autoCloseOnEnd && subscription.endDate && periodStart >= subscription.endDate) break;
         const periodEnd = addInterval(periodStart, plan.billingInterval, plan.intervalCount, anchorDay);
 
         const existing = await tx.invoice.findFirst({
