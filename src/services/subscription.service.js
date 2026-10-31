@@ -6,6 +6,7 @@ import { buildMeta, parsePagination } from '../utils/pagination.js';
 import { nextNumber, withNumberRetry } from '../utils/numbering.js';
 import { assertCanAccess, customerScope, isStaffOrAdmin } from './access.service.js';
 import { validatePlanQuantity } from './plan.service.js';
+import { DEFAULT_PAYMENT_TERMS_DAYS } from './pricing.service.js';
 
 /**
  * Subscription lifecycle (Member 4)
@@ -119,7 +120,7 @@ const lifecycleFields = (plan, start, { activate, trialAllowed }) => {
  * Create a subscription (and its lines) inside the caller's transaction.
  * Shared by direct creation and quotation conversion.
  */
-export const createSubscriptionRecord = async (tx, { customerId, plan, items, startDate, endDate, autoRenew = true, notes = null, activate = true, user }) => {
+export const createSubscriptionRecord = async (tx, { customerId, plan, items, startDate, endDate, autoRenew = true, paymentTermsDays, notes = null, activate = true, user }) => {
   const start = startDate ?? new Date();
   const priorOnPlan = await tx.subscription.count({ where: { customerId, planId: plan.id } });
   const fields = lifecycleFields(plan, start, { activate, trialAllowed: priorOnPlan === 0 });
@@ -134,9 +135,17 @@ export const createSubscriptionRecord = async (tx, { customerId, plan, items, st
       startDate: start,
       endDate: endDate ?? null,
       autoRenew,
+      paymentTermsDays: paymentTermsDays ?? DEFAULT_PAYMENT_TERMS_DAYS,
       notes,
       ...fields,
-      items: { create: items.map((i) => ({ variantId: i.variantId, quantity: i.quantity, unitPrice: round2(i.unitPrice) })) },
+      items: {
+        create: items.map((i) => ({
+          variantId: i.variantId,
+          quantity: i.quantity,
+          unitPrice: round2(i.unitPrice),
+          taxRate: i.taxRate === undefined || i.taxRate === null ? null : D(i.taxRate), // null = default tax at billing time
+        })),
+      },
     },
   });
   await logAudit(tx, user, 'SUBSCRIPTION_CREATED', subscription, { status: subscription.status });
@@ -156,7 +165,7 @@ export const createSubscription = async (user, data) => {
   const items = data.items.map((item) => {
     const variant = byId.get(item.variantId);
     if (!variant || !variant.isActive) throw new BadRequestError(`Product variant ${item.variantId} does not exist or is inactive`);
-    return { variantId: item.variantId, quantity: item.quantity, unitPrice: item.unitPrice ?? variant.price };
+    return { variantId: item.variantId, quantity: item.quantity, unitPrice: item.unitPrice ?? variant.price, taxRate: item.taxRate };
   });
   if (data.endDate && data.startDate && data.endDate <= data.startDate) {
     throw new BadRequestError('End date must be after the start date');
@@ -166,7 +175,7 @@ export const createSubscription = async (user, data) => {
     prisma.$transaction((tx) =>
       createSubscriptionRecord(tx, {
         customerId: customer.id, plan, items, startDate: data.startDate, endDate: data.endDate,
-        autoRenew: data.autoRenew, notes: data.notes, activate: data.activate, user,
+        autoRenew: data.autoRenew, paymentTermsDays: data.paymentTermsDays, notes: data.notes, activate: data.activate, user,
       })
     )
   );
@@ -305,7 +314,8 @@ export const renewSubscription = (user, id) =>
  */
 export const expireDueSubscriptions = async (now = new Date(), db = prisma) => {
   const result = await db.subscription.updateMany({
-    where: { endDate: { lte: now }, status: { in: ['ACTIVE', 'TRIALING', 'PAUSED'] } },
+    // Plans with autoCloseOnEnd = false keep running past their end date until someone closes them.
+    where: { endDate: { lte: now }, status: { in: ['ACTIVE', 'TRIALING', 'PAUSED'] }, plan: { autoCloseOnEnd: true } },
     data: { status: 'EXPIRED' },
   });
   return result.count;

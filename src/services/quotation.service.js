@@ -73,7 +73,35 @@ export const getQuotation = async (user, id) => {
 
 /* ------------------------------------------------------------------ */
 
-export const createQuotation = async (user, data) => {
+/**
+ * Fill a request from a quotation template: its plan, lines, validity days, notes and terms
+ * become the defaults, and anything the caller sends explicitly wins.
+ */
+const applyTemplate = async (input) => {
+  if (!input.templateId) return { data: input, template: null };
+  const template = await prisma.quotationTemplate.findUnique({ where: { id: input.templateId }, include: { items: { orderBy: { createdAt: 'asc' } } } });
+  if (!template) throw new NotFoundError('Quotation template not found');
+  if (!template.isActive) throw new BadRequestError('This quotation template is inactive');
+  return {
+    template,
+    data: {
+      ...input,
+      planId: input.planId ?? template.planId,
+      validDays: input.validUntil ? undefined : input.validDays ?? template.validityDays,
+      notes: input.notes ?? template.notes,
+      terms: input.terms ?? template.terms,
+      items: input.items ?? template.items.map((i) => ({
+        variantId: i.variantId,
+        quantity: i.quantity,
+        description: i.description ?? undefined,
+        unitPrice: i.unitPrice ?? undefined, // null = the variant's current price
+      })),
+    },
+  };
+};
+
+export const createQuotation = async (user, input) => {
+  const { data, template } = await applyTemplate(input);
   const customer = await prisma.customer.findUnique({ where: { id: data.customerId } });
   if (!customer) throw new NotFoundError('Customer not found');
   if (customer.status !== 'ACTIVE') throw new BadRequestError('Cannot quote an inactive customer');
@@ -127,6 +155,7 @@ export const createQuotation = async (user, data) => {
           customerId: customer.id,
           createdById: user.id,
           status: 'DRAFT',
+          templateId: template?.id ?? null,
           validUntil,
           ...totals,
           notes: data.notes ?? null,
@@ -176,7 +205,7 @@ export const rejectQuotation = (user, id) => transition(user, id, { from: ['DRAF
  * Convert a valid quotation into a subscription.
  * Requires every line to carry a product variant, and all lines to share one plan.
  */
-export const convertQuotation = async (user, id, { activate = true, startDate, endDate, autoRenew = true } = {}) => {
+export const convertQuotation = async (user, id, { activate = true, startDate, endDate, autoRenew = true, paymentTermsDays } = {}) => {
   await expireStaleQuotations();
   const quotation = await loadQuotation(id);
   if (!quotation) throw new NotFoundError('Quotation not found');
@@ -214,10 +243,12 @@ export const convertQuotation = async (user, id, { activate = true, startDate, e
       const subscription = await createSubscriptionRecord(tx, {
         customerId: quotation.customerId,
         plan,
-        items: quotation.items.map((i) => ({ variantId: i.variantId, quantity: i.quantity, unitPrice: i.unitPrice })),
+        // the quoted tax rate is carried onto the subscription line so billing charges what was quoted
+        items: quotation.items.map((i) => ({ variantId: i.variantId, quantity: i.quantity, unitPrice: i.unitPrice, taxRate: i.taxRate })),
         startDate,
         endDate,
         autoRenew,
+        paymentTermsDays,
         notes: `Converted from quotation ${quotation.quotationNumber}`,
         activate,
         user,

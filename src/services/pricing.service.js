@@ -1,5 +1,8 @@
 import { D, minDecimal, percentOf, round2, sum } from '../utils/money.js';
 
+/** Payment terms given to a new subscription when none is specified (days from issue to due date). */
+export const DEFAULT_PAYMENT_TERMS_DAYS = parseInt(process.env.DEFAULT_PAYMENT_TERMS_DAYS, 10) || 30;
+
 /**
  * Line / document maths shared by quotations and invoices (Member 4).
  * line.totalAmount = quantity * unitPrice - discount + tax (tax-inclusive line total,

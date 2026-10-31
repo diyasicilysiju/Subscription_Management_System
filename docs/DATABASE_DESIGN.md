@@ -192,6 +192,10 @@ Used in `payments.status`:
 | `availableFrom` | `TIMESTAMP?` | Nullable | Scheduled launch date |
 | `availableTo` | `TIMESTAMP?` | Nullable | Scheduled sunset/retirement date |
 | `isActive` | `BOOLEAN` | `@default(true)` | Available for new signups |
+| `allowPause` | `BOOLEAN` | `@default(true)` | Subscribers of this plan may pause |
+| `allowEarlyClose` | `BOOLEAN` | `@default(true)` | Subscribers may cancel before the end date |
+| `allowRenew` | `BOOLEAN` | `@default(true)` | Subscribers may renew |
+| `autoCloseOnEnd` | `BOOLEAN` | `@default(true)` | Subscriptions expire automatically at their end date |
 | `createdAt` | `TIMESTAMP` | `@default(now())` | Creation timestamp |
 | `updatedAt` | `TIMESTAMP` | `@updatedAt` | Update timestamp |
 
@@ -206,6 +210,7 @@ Used in `payments.status`:
 | `rate` | `DECIMAL(5, 2)` | | Tax percentage (e.g. 8.25 for 8.25%) |
 | `description` | `TEXT?` | Nullable | Tax description |
 | `isCompound` | `BOOLEAN` | `@default(false)` | Compound calculation flag |
+| `isDefault` | `BOOLEAN` | `@default(false)` | Applied automatically to lines with no explicit rate; at most one (enforced in the service) |
 | `isActive` | `BOOLEAN` | `@default(true)` | Active status |
 | `createdAt` | `TIMESTAMP` | `@default(now())` | Creation timestamp |
 | `updatedAt` | `TIMESTAMP` | `@updatedAt` | Update timestamp |
@@ -285,6 +290,7 @@ Tracks every discount redemption against a customer, invoice, or quotation.
 - `notes`: `TEXT?`
 - `terms`: `TEXT?`
 - `convertedSubscriptionId`: `UUID?` (`@unique`, FK `subscriptions.id`)
+- `templateId`: `UUID?` (FK `quotation_templates.id`, `onDelete: SetNull`) — the template the quotation was started from
 
 #### `QuotationItem` (`quotation_items`)
 - `id`: `UUID` (`@id`)
@@ -297,6 +303,25 @@ Tracks every discount redemption against a customer, invoice, or quotation.
 - `discountAmount`: `DECIMAL(12, 2)`
 - `taxRate`: `DECIMAL(5, 2)`
 - `totalAmount`: `DECIMAL(12, 2)`
+
+---
+
+### 4.9a. Quotation Templates
+
+#### `QuotationTemplate` (`quotation_templates`)
+A reusable starting point for quotations: the right plan and product lines, valid for a set number of days.
+- `id`: `UUID` (`@id`)
+- `name`: `TEXT`, `code`: `TEXT` (`@unique`), `description`: `TEXT?`
+- `planId`: `UUID` (FK `plans.id`, `onDelete: Restrict`)
+- `validityDays`: `INTEGER` (`@default(30)`) — a quotation started from it is valid for this many days
+- `notes`: `TEXT?`, `terms`: `TEXT?`, `isActive`: `BOOLEAN` (`@default(true)`)
+
+#### `QuotationTemplateItem` (`quotation_template_items`)
+- `id`: `UUID` (`@id`)
+- `templateId`: `UUID` (FK `quotation_templates.id`, `onDelete: Cascade`)
+- `variantId`: `UUID` (FK `product_variants.id`, `onDelete: Restrict`)
+- `description`: `TEXT?`, `quantity`: `INTEGER` (`@default(1)`)
+- `unitPrice`: `DECIMAL(12, 2)?` (nullable: `null` = the variant's current price)
 
 ---
 
@@ -322,6 +347,7 @@ Tracks every discount redemption against a customer, invoice, or quotation.
 | `resumedAt` | `TIMESTAMP?` | Nullable | Timestamp of resumption |
 | `cancelledAt` | `TIMESTAMP?` | Nullable | Timestamp of cancellation |
 | `cancellationReason`| `TEXT?` | Nullable | Cancellation reason |
+| `paymentTermsDays` | `INTEGER` | `@default(30)` | Days from invoice issue date to due date |
 | `notes` | `TEXT?` | Nullable | Notes |
 
 #### `SubscriptionItem` (`subscription_items`)
@@ -330,6 +356,7 @@ Tracks every discount redemption against a customer, invoice, or quotation.
 - `variantId`: `UUID` (FK `product_variants.id`)
 - `quantity`: `INTEGER`
 - `unitPrice`: `DECIMAL(12, 2)`
+- `taxRate`: `DECIMAL(5, 2)?` (nullable: `null` = use the default tax when billing, `0` = tax exempt)
 
 ---
 
