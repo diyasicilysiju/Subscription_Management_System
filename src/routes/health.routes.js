@@ -10,13 +10,22 @@ const router = Router();
  * GET /api/v1/health or GET /health
  */
 router.get('/', async (_req, res) => {
+  let dbStatus = 'disconnected';
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    dbStatus = 'connected';
+  } catch (err) {
+    dbStatus = prisma?.user ? 'ready_awaiting_connection' : 'not_initialized';
+  }
+
   const healthData = {
     uptimeSeconds: Math.floor(process.uptime()),
     timestamp: new Date().toISOString(),
     environment: config.nodeEnv,
     service: 'Brightloop Core API',
     database: {
-      status: prisma?.user ? 'connected' : 'awaiting_schema_from_member_3',
+      client: 'Prisma Client v5.22.0',
+      status: dbStatus,
     },
   };
 

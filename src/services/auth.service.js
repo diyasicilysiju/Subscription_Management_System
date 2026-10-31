@@ -1,39 +1,31 @@
 import prisma from '../config/db.js';
 import { hashPassword, comparePassword } from '../utils/password.js';
 import { generateToken } from '../utils/jwt.js';
-import { AppError, ConflictError, UnauthorizedError, NotFoundError } from '../utils/appError.js';
+import { ConflictError, UnauthorizedError, NotFoundError } from '../utils/appError.js';
 import { ROLES } from '../constants/roles.js';
 
 /**
  * Authentication Service
- * 
- * NOTE FOR MEMBER 3 (Database Lead):
- * This service implements the business rules, password hashing, and JWT issuance.
- * The database queries below interact via the Prisma client stub. Once Member 3
- * defines the User model in schema.prisma and runs `npx prisma generate`,
- * verify that the model name (e.g., prisma.user) and fields match:
- * - email (String, unique)
- * - password (String, hashed)
- * - name (String)
- * - role (String/Enum: 'Admin' | 'Staff' | 'Customer')
+ * Uses the shared Prisma singleton client from src/config/db.js.
+ * Operates on the Prisma User and Customer models.
  */
 
 /**
- * Register a new user (defaults to Customer role)
- * @param {Object} input - { email, password, name, role }
+ * Register a new user (defaults to CUSTOMER role)
+ * Also creates an associated Customer profile if role is CUSTOMER.
+ * @param {Object} input - { email, password, name, firstName, lastName, phone, role }
  */
-export const registerUser = async ({ email, password, name, role = ROLES.CUSTOMER }) => {
-  // Check if database client is ready
-  if (!prisma?.user) {
-    throw new AppError(
-      'Database is awaiting Member 3 schema.prisma integration. User model is not yet compiled.',
-      503,
-      null,
-      'DATABASE_PENDING_SCHEMA'
-    );
+export const registerUser = async ({ email, password, name, firstName, lastName, phone, role = ROLES.CUSTOMER }) => {
+  // 1. Resolve first and last names
+  let fName = firstName;
+  let lName = lastName;
+  if (!fName && name) {
+    const parts = name.trim().split(' ');
+    fName = parts[0] || 'User';
+    lName = parts.slice(1).join(' ') || '';
   }
 
-  // 1. Check if user already exists
+  // 2. Check if user with email already exists
   const existingUser = await prisma.user.findUnique({
     where: { email },
   });
@@ -42,31 +34,57 @@ export const registerUser = async ({ email, password, name, role = ROLES.CUSTOME
     throw new ConflictError('An account with this email address already exists');
   }
 
-  // 2. Hash password securely
+  // 3. Hash password securely
   const hashedPassword = await hashPassword(password);
 
-  // 3. Create user in database
+  // 4. Create user in database (with customer profile if CUSTOMER role)
+  const isCustomer = role === ROLES.CUSTOMER;
+
   const user = await prisma.user.create({
     data: {
       email,
       password: hashedPassword,
-      name,
+      firstName: fName || 'User',
+      lastName: lName || '',
+      phone: phone || null,
       role: role || ROLES.CUSTOMER,
+      ...(isCustomer
+        ? {
+            customer: {
+              create: {
+                contactName: `${fName || ''} ${lName || ''}`.trim() || 'Valued Customer',
+                email,
+                phone: phone || null,
+              },
+            },
+          }
+        : {}),
     },
     select: {
       id: true,
       email: true,
-      name: true,
+      firstName: true,
+      lastName: true,
+      phone: true,
       role: true,
       createdAt: true,
+      customer: {
+        select: {
+          id: true,
+          companyName: true,
+          contactName: true,
+          status: true,
+        },
+      },
     },
   });
 
-  // 4. Generate JWT token
+  // 5. Generate signed JWT token
   const token = generateToken({
     id: user.id,
     email: user.email,
     role: user.role,
+    customerId: user.customer?.id || null,
   });
 
   return { user, token };
@@ -77,21 +95,22 @@ export const registerUser = async ({ email, password, name, role = ROLES.CUSTOME
  * @param {Object} input - { email, password }
  */
 export const loginUser = async ({ email, password }) => {
-  if (!prisma?.user) {
-    throw new AppError(
-      'Database is awaiting Member 3 schema.prisma integration. User model is not yet compiled.',
-      503,
-      null,
-      'DATABASE_PENDING_SCHEMA'
-    );
-  }
-
-  // 1. Find user by email
+  // 1. Find user by email including linked customer profile
   const user = await prisma.user.findUnique({
     where: { email },
+    include: {
+      customer: {
+        select: {
+          id: true,
+          companyName: true,
+          contactName: true,
+          status: true,
+        },
+      },
+    },
   });
 
-  if (!user) {
+  if (!user || !user.isActive) {
     throw new UnauthorizedError('Invalid email or password', null, 'INVALID_CREDENTIALS');
   }
 
@@ -106,6 +125,7 @@ export const loginUser = async ({ email, password }) => {
     id: user.id,
     email: user.email,
     role: user.role,
+    customerId: user.customer?.id || null,
   });
 
   // Exclude password hash from response
@@ -119,24 +139,31 @@ export const loginUser = async ({ email, password }) => {
  * @param {string} userId
  */
 export const getUserProfile = async (userId) => {
-  if (!prisma?.user) {
-    throw new AppError(
-      'Database is awaiting Member 3 schema.prisma integration.',
-      503,
-      null,
-      'DATABASE_PENDING_SCHEMA'
-    );
-  }
-
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: {
       id: true,
       email: true,
-      name: true,
+      firstName: true,
+      lastName: true,
+      phone: true,
       role: true,
+      isActive: true,
       createdAt: true,
       updatedAt: true,
+      customer: {
+        select: {
+          id: true,
+          companyName: true,
+          contactName: true,
+          email: true,
+          phone: true,
+          billingAddress: true,
+          shippingAddress: true,
+          taxNumber: true,
+          status: true,
+        },
+      },
     },
   });
 
@@ -149,13 +176,11 @@ export const getUserProfile = async (userId) => {
 
 /**
  * Create a staff user (Admin only operation)
- * @param {Object} input - { email, password, name }
+ * @param {Object} input - { email, password, name, firstName, lastName, phone }
  */
-export const createStaffUser = async ({ email, password, name }) => {
+export const createStaffUser = async (input) => {
   return registerUser({
-    email,
-    password,
-    name,
+    ...input,
     role: ROLES.STAFF,
   });
 };

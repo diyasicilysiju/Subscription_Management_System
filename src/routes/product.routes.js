@@ -3,7 +3,11 @@ import * as productController from '../controllers/product.controller.js';
 import { validate } from '../middlewares/validate.js';
 import { authenticate } from '../middlewares/auth.js';
 import { authorize } from '../middlewares/roleCheck.js';
-import { createProductSchema, updateProductSchema } from '../validations/product.validation.js';
+import {
+  createProductSchema,
+  updateProductSchema,
+  productVariantSchema,
+} from '../validations/product.validation.js';
 import { ROLES } from '../constants/roles.js';
 
 const router = Router();
@@ -27,6 +31,22 @@ router.put(
   authorize(ROLES.ADMIN, ROLES.STAFF),
   validate(updateProductSchema),
   productController.updateProduct
+);
+
+router.delete(
+  '/:id',
+  authenticate,
+  authorize(ROLES.ADMIN, ROLES.STAFF),
+  productController.deleteProduct
+);
+
+// Admin and Staff can add variants
+router.post(
+  '/:id/variants',
+  authenticate,
+  authorize(ROLES.ADMIN, ROLES.STAFF),
+  validate(productVariantSchema),
+  productController.addProductVariant
 );
 
 export default router;

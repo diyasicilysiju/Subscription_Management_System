@@ -33,4 +33,11 @@ router.put(
   customerController.updateCustomer
 );
 
+// Staff and Admin can deactivate customers
+router.delete(
+  '/:id',
+  authorize(ROLES.ADMIN, ROLES.STAFF),
+  customerController.deleteCustomer
+);
+
 export default router;
