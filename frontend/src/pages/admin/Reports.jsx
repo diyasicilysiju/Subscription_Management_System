@@ -119,7 +119,7 @@ export const Reports = () => {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           title="Gross Billed"
-          value={formatCurrency(reportData?.totalGross || 289400)}
+          value={formatCurrency(reportData?.totalGross ?? 289400)}
           trend="+14.2%"
           trendType="up"
           subtitle="Total invoices generated"
@@ -129,7 +129,7 @@ export const Reports = () => {
 
         <StatCard
           title="Net Revenue Recognized"
-          value={formatCurrency(reportData?.totalNet || 261800)}
+          value={formatCurrency(reportData?.totalNet ?? 261800)}
           subtitle="Net of discounts & taxes"
           icon={TrendingUp}
           iconColor="text-emerald-600 bg-emerald-50"
@@ -137,7 +137,7 @@ export const Reports = () => {
 
         <StatCard
           title="Taxes Collected"
-          value={formatCurrency(reportData?.totalTax || 27600)}
+          value={formatCurrency(reportData?.totalTax ?? 27600)}
           subtitle="Sales Tax & VAT remittance"
           icon={Calendar}
           iconColor="text-indigo-600 bg-indigo-50"
@@ -145,7 +145,7 @@ export const Reports = () => {
 
         <StatCard
           title="AR Outstanding / Overdue"
-          value={formatCurrency(reportData?.arOverdue || 1296)}
+          value={formatCurrency(reportData?.arOverdue ?? 1296)}
           subtitle="Unpaid invoices requiring follow-up"
           trendType="down"
           icon={AlertTriangle}

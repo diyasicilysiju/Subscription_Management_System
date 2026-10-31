@@ -90,7 +90,7 @@ export const Dashboard = () => {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           title="Monthly Recurring Revenue"
-          value={formatCurrency(metrics?.mrr || 24850)}
+          value={formatCurrency(metrics?.mrr ?? 24850)}
           trend={metrics?.mrrGrowth || '+12.5%'}
           trendType="up"
           subtitle="vs. previous month"
@@ -100,7 +100,7 @@ export const Dashboard = () => {
 
         <StatCard
           title="Active Subscriptions"
-          value={metrics?.activeSubscriptions || 142}
+          value={metrics?.activeSubscriptions ?? 142}
           trend={metrics?.activeSubscriptionsGrowth || '+8%'}
           trendType="up"
           subtitle="Active recurring contracts"
@@ -110,7 +110,7 @@ export const Dashboard = () => {
 
         <StatCard
           title="Total Cash Collected"
-          value={formatCurrency(metrics?.totalRevenue || 189200)}
+          value={formatCurrency(metrics?.totalRevenue ?? 189200)}
           subtitle="Gross lifetime collections"
           icon={TrendingUp}
           iconColor="text-indigo-600 bg-indigo-50"
@@ -118,8 +118,8 @@ export const Dashboard = () => {
 
         <StatCard
           title="Overdue Invoices"
-          value={formatCurrency(metrics?.overdueAmount || 1296)}
-          subtitle={`${metrics?.overdueCount || 3} invoices past due`}
+          value={formatCurrency(metrics?.overdueAmount ?? 1296)}
+          subtitle={`${metrics?.overdueCount ?? 3} invoices past due`}
           trend="Requires action"
           trendType="down"
           icon={AlertTriangle}
